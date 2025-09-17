@@ -1,11 +1,25 @@
-help
-q
-q
-add-symbol-file user/_find
-b user/find.c:main
-step
-break 67
-break 71
-b user/find.c:71
-step
-q
+si 5                     
+b *0x80000086           
+c                        
+b main                   
+c                        
+si                        
+b userinit               
+c                         
+n 8                      
+p p->name                
+fin                      
+b scheduler              
+c                        
+s                         
+n 8                      
+si 33                     
+n 5                      
+s                         
+u 112					
+si 94					
+n 14					
+s
+n 					
+p p->name			
+n                       
