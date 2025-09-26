@@ -295,6 +295,7 @@ void reparent(struct proc *p) {
 void exif(struct proc *p,struct proc *parent)
 {
     struct proc *child;
+    int childindex=0;
     char* procstate_name[]={"UNUSED","SLEEPING","RUNNABLE","RUNNING","ZOMBIE"};
     exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
       p->pid,parent->pid,parent->name,procstate_name[parent->state]);
@@ -303,8 +304,8 @@ void exif(struct proc *p,struct proc *parent)
       if(child->parent==p)
       {
         acquire(&child->lock);
-        exit_info("proc %d exit, child pid %d, name %s, state %s\n",
-      p->pid,child->pid,child->name,procstate_name[child->state]);
+        exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
+      p->pid,childindex++,child->pid,child->name,procstate_name[child->state]);
         release(&child->lock);
       }
     }

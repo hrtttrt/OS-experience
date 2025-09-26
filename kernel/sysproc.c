@@ -88,13 +88,10 @@ uint64 sys_rename(void) {
 uint64 sys_yield(void) {
   struct proc *p=myproc();
   struct proc *pp=myproc();
-  //uint64 contextbegin=&(p->context);
-  //uint64 contextend=contextbegin+sizeof(p->context);
   acquire(&p->lock);
   for(pp=proc;pp<&proc[NPROC];pp++)
   {
     if(pp->state==RUNNABLE&&pp!=p) break;
-    if(pp==&proc[NPROC]-1) pp=proc;//环形遍历
   }
   release(&p->lock);
   printf("Save the context of the process to the memory region from address %p to %p\n",&(p->context), &(p->context)+1);
