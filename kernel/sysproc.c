@@ -21,7 +21,9 @@ uint64 sys_fork(void) { return fork(); }
 uint64 sys_wait(void) {
   uint64 p;
   if (argaddr(0, &p) < 0) return -1;
-  return wait(p);
+  int flag;
+  argint(1,&flag);
+  return wait(p,flag);
 }
 
 uint64 sys_sbrk(void) {

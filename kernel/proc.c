@@ -377,7 +377,7 @@ void exit(int status) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+int wait(uint64 addr,int flag) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -416,7 +416,7 @@ int wait(uint64 addr) {
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || p->killed) {
+    if (!havekids || p->killed||flag==1) {
       release(&p->lock);
       return -1;
     }
