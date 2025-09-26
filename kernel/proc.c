@@ -291,6 +291,25 @@ void reparent(struct proc *p) {
   }
 }
 
+//exp2:进行父子进程信息的打印。
+void exif(struct proc *p,struct proc *parent)
+{
+    struct proc *child;
+    char* procstate_name[]={"UNUSED","SLEEPING","RUNNABLE","RUNNING","ZOMBIE"};
+    exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
+      p->pid,parent->pid,parent->name,procstate_name[parent->state]);
+    for(child=proc;child<&proc[NPROC];child++)
+    {
+      if(child->parent==p)
+      {
+        acquire(&child->lock);
+        exit_info("proc %d exit, child pid %d, name %s, state %s\n",
+      p->pid,child->pid,child->name,procstate_name[child->state]);
+        release(&child->lock);
+      }
+    }
+}
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
@@ -337,6 +356,8 @@ void exit(int status) {
   acquire(&original_parent->lock);
 
   acquire(&p->lock);
+
+  exif(p,original_parent);
 
   // Give any children to init.
   reparent(p);
