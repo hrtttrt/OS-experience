@@ -23,7 +23,7 @@ uint64 sys_wait(void) {
   if (argaddr(0, &p) < 0) return -1;
 
   int flag;
-  if(argint(1,&flag)<0) return -1;
+  if(argint(1,&flag)<0) return -1;//得到寄存器中存储的第二个int型参数，即用户级wait()输入的flag
   return wait(p,flag);
 }
 
@@ -89,13 +89,13 @@ uint64 sys_yield(void) {
   struct proc *p=myproc();
   struct proc *pp=myproc();
   acquire(&p->lock);
-  for(pp=proc;pp<&proc[NPROC];pp++)
+  for(pp=proc;pp<&proc[NPROC];pp++)//从头遍历进程表
   {
     if(pp->state==RUNNABLE&&pp!=p) break;
   }
   release(&p->lock);
   printf("Save the context of the process to the memory region from address %p to %p\n",&(p->context), &(p->context)+1);
-  printf("Current running process pid is %d and user pc is %p\n", p->pid, p->trapframe->epc);
+  printf("Current running process pid is %d and user pc is %p\n", p->pid, p->trapframe->epc);//trapframe->epc存储对应进程的PC
   printf("Next runnable process pid is %d and user pc is %p\n", pp->pid, pp->trapframe->epc);
   yield();
   return 0;

@@ -291,7 +291,7 @@ void reparent(struct proc *p) {
   }
 }
 
-//exp2:进行父子进程信息的打印。
+//exp1:进行父子进程信息的打印。
 void exif(struct proc *p,struct proc *parent)
 {
     struct proc *child;
@@ -303,10 +303,10 @@ void exif(struct proc *p,struct proc *parent)
     {
       if(child->parent==p)
       {
-        acquire(&child->lock);
+        acquire(&child->lock);//上锁保证操作进程保持不变
         exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
       p->pid,childindex++,child->pid,child->name,procstate_name[child->state]);
-        release(&child->lock);
+        release(&child->lock);//解锁
       }
     }
 }
@@ -358,7 +358,7 @@ void exit(int status) {
 
   acquire(&p->lock);
 
-  exif(p,original_parent);
+  exif(p,original_parent);//打印父子进程信息
 
   // Give any children to init.
   reparent(p);
@@ -378,7 +378,7 @@ void exit(int status) {
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr,int flag) {
+int wait(uint64 addr,int flag) {//flag==1时进行非阻塞等待，否则阻塞等待
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
