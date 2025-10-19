@@ -9,6 +9,8 @@
 #include "riscv.h"
 #include "defs.h"
 
+#define EACHKMEM (PHYSTOP-(uint64)end)/NCPU
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -18,15 +20,18 @@ struct run {
   struct run *next;
 };
 
-struct {
+struct kmem{
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+};
+
+struct kmem kmems[NCPU];//每个CPU拥有独立的freelist
+
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  for(int i=0;i<NCPU;++i) initlock(&kmems[i].lock, "kmem");//给每个kmem单独初始化锁
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -55,11 +60,14 @@ kfree(void *pa)
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
+  push_off();
+  int index = cpuid();
+  pop_off();
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmems[index].lock);
+  r->next = kmems[index].freelist;
+  kmems[index].freelist = r;
+  release(&kmems[index].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,11 +78,32 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  push_off();
+  int index = cpuid();
+  pop_off();
+
+  acquire(&kmems[index].lock);
+  r = kmems[index].freelist;
+
+  if(r){
+    kmems[index].freelist = r->next;
+    release(&kmems[index].lock);
+  }
+  else {
+    release(&kmems[index].lock);//先解锁当前kmem
+    for(int i=0;i<NCPU;++i){
+      if(i==index) continue;//跳过当前空间已满CPU
+      acquire(&kmems[i].lock);
+      r=kmems[i].freelist;
+      if(r){//尝试从别的CPUfreelist偷取内存
+        kmems[i].freelist=r->next;
+        release(&kmems[i].lock);
+        break;
+      }
+      release(&kmems[i].lock);
+    }
+  }
+  
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
