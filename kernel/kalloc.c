@@ -100,7 +100,7 @@ kalloc(void)
         release(&kmems[i].lock);
         break;
       }
-      release(&kmems[i].lock);
+      release(&kmems[i].lock);//没偷到也解锁，防止死锁
     }
   }
   
