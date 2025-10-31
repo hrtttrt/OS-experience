@@ -379,3 +379,38 @@ int test_pagetable() {
   printf("test_pagetable: %d\n", satp != gsatp);
   return satp != gsatp;
 }
+
+//递归调用的打印函数
+void vmp(pagetable_t pgtbl,int level,uint64 va_base) {
+  char flags[4];
+  for(int i=0;i<512;i++){// 遍历当前页表页中的所有PTE表项
+    pte_t pte = pgtbl[i]; //获取第i条PTE 
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){ //页表项有效&不具有R/W/X权限，说明不是叶子映射
+      flags[0]=(pte&PTE_R)?'r':'-';
+      flags[1]=(pte&PTE_W)?'w':'-';
+      flags[2]=(pte&PTE_X)?'x':'-';
+      flags[3]=(pte&PTE_U)?'u':'-';
+      uint64 pa=PTE2PA(pte);
+      uint64 next_va_base=va_base+((uint64)i << PXSHIFT(2 - level));
+      printf("||");
+      for(int j=0;j<level;j++) printf("   ||");
+      printf("idx: %d: pa: %p, flags: %s\n",i,pa,flags);
+      vmp((pagetable_t)pa,level+1,next_va_base);
+    }
+    else if(pte & PTE_V){// 如果PTE有效且具有R/W/X权限（叶子节点
+      flags[0]=(pte&PTE_R)?'r':'-';
+      flags[1]=(pte&PTE_W)?'w':'-';
+      flags[2]=(pte&PTE_X)?'x':'-';
+      flags[3]=(pte&PTE_U)?'u':'-';
+      uint64 pa=PTE2PA(pte);
+      uint64 va=va_base+((uint64)i << PXSHIFT(2 - level));
+      printf("||");
+      for(int j=0;j<level;j++) printf("   ||");
+      printf("idx: %d: va: %p -> pa: %p, flags: %s\n",i,va,pa,flags);
+    }
+  }
+}
+void vmprint(pagetable_t pgtbl) {
+  printf("page table %p\n",pgtbl);
+  vmp(pgtbl,0,0);
+}
