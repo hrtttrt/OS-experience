@@ -383,6 +383,8 @@ int test_pagetable() {
   return satp != gsatp;
 }
 
+
+
 //递归调用的打印函数
 void vmp(pagetable_t pgtbl,int level,uint64 va_base) {
   char flags[4];
@@ -416,4 +418,50 @@ void vmp(pagetable_t pgtbl,int level,uint64 va_base) {
 void vmprint(pagetable_t pgtbl) {
   printf("page table %p\n",pgtbl);
   vmp(pgtbl,0,0);
+}
+
+
+//创建独立内核页表,不映射CLINT,分配失败返回0
+pagetable_t proc_kpagetable(void) {
+  pagetable_t kpagetable=(pagetable_t)kalloc();
+  memset(kpagetable,0,PGSIZE);//所有页表项初始为0
+
+  // uart registers
+  if(mappages(kpagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W) != 0){
+    kfree((void*)kpagetable);
+    return 0;
+  }
+
+  // virtio mmio disk interface
+  if(mappages(kpagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != 0){
+    kfree((void*)kpagetable);
+    return 0;
+  }
+
+  // PLIC
+  if(mappages(kpagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W) != 0){
+    kfree((void*)kpagetable);
+    return 0;
+  }
+
+  // map kernel text executable and read-only.
+  if(mappages(kpagetable, KERNBASE, (uint64)etext - KERNBASE, KERNBASE, PTE_R | PTE_X) != 0){
+    kfree((void*)kpagetable);
+    return 0;
+  }
+
+  // map kernel data and the physical RAM we'll make use of.
+  if(mappages(kpagetable, (uint64)etext, PHYSTOP - (uint64)etext, (uint64)etext, PTE_R | PTE_W) != 0){
+    kfree((void*)kpagetable);
+    return 0;
+  }
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  if(mappages(kpagetable,TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X) != 0){
+    kfree((void*)kpagetable);
+    return 0;
+  }
+
+  return kpagetable;
 }

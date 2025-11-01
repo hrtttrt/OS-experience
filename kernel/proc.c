@@ -32,11 +32,13 @@ void procinit(void) {
     // Allocate a page for the process's kernel stack.
     // Map it high in memory, followed by an invalid
     // guard page.
-    char *pa = kalloc();
+    char *pa = kalloc();// 分配一个物理页，返回其首地址
     if (pa == 0) panic("kalloc");
-    uint64 va = KSTACK((int)(p - proc));
-    kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-    p->kstack = va;
+    uint64 va = KSTACK((int)(p - proc));// 计算内核栈所在的虚拟地址
+    kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);// 在内核页表建立内核栈的映射
+    p->kstack = va;// 将内核栈的虚拟地址存储于进程控制块PCB中
+
+    p->kstack_pa=(uint64)pa;//任务二：把内核栈的物理地址pa拷贝到PCB新增的成员kstack_pa中
   }
   kvminithart();
 }
@@ -117,6 +119,21 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //任务二：创建独立内核页表
+  p->k_pagetable=proc_kpagetable();
+  if(p->k_pagetable==0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  //将内核栈映射到页表k_pagetable里
+  if(mappages(p->k_pagetable,p->kstack,PGSIZE,p->kstack_pa,PTE_R|PTE_W)!=0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
   return p;
 }
 
@@ -128,6 +145,32 @@ static void freeproc(struct proc *p) {
   p->trapframe = 0;
   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+
+  //任务二：释放页表但不释放叶子页表指向的物理页帧
+  if(p->k_pagetable){
+    for(int i=0;i<512;i++){
+      pte_t pte_L2=p->k_pagetable[i];
+      if((pte_L2 & PTE_V) && (pte_L2 & (PTE_R|PTE_W|PTE_X) == 0)){//非叶节点
+        pagetable_t child=(pagetable_t)PTE2PA(pte_L2);
+        for(int j=0;j<512;j++){
+          pte_t pte_L1=child[j];
+          if((pte_L1 & PTE_V) && (pte_L1 & (PTE_R|PTE_W|PTE_X) == 0)){//非叶节点
+            pagetable_t grandchild=(pagetable_t)PTE2PA(pte_L1);
+            for(int k=0;k<512;k++){
+              grandchild[k]=0;//直接清除L0的每一个页表项
+            }
+            kfree((void*)grandchild);//释放L0
+          }
+          child[j]=0;//清除L1页表项
+        }
+        kfree((void*)child);//释放L1
+      }
+      p->k_pagetable[i]=0;//清除L2页表项
+    }
+    kfree((void*)p->k_pagetable);//释放L2
+  }
+  p->k_pagetable=0;
+
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -417,7 +460,9 @@ void scheduler(void) {
   struct cpu *c = mycpu();
 
   c->proc = 0;
+  kvminithart();//初始化：导入全局内核页表
   for (;;) {
+    
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
 
@@ -430,18 +475,24 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        //任务二：切换进程的时候切换内核页表
+        w_satp(MAKE_SATP(p->k_pagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
+        kvminithart();//恢复至全局内核页表
         // It should have changed its p->state before coming back.
         c->proc = 0;
-
+        
         found = 1;
       }
       release(&p->lock);
     }
 #if !defined(LAB_FS)
     if (found == 0) {
+      kvminithart();//当目前没有进程运行的时候载入全局的内核页表kernel_pagetable
       intr_on();
       asm volatile("wfi");
     }
