@@ -150,11 +150,11 @@ static void freeproc(struct proc *p) {
   if(p->k_pagetable){
     for(int i=0;i<512;i++){
       pte_t pte_L2=p->k_pagetable[i];
-      if((pte_L2 & PTE_V) && (pte_L2 & (PTE_R|PTE_W|PTE_X) == 0)){//非叶节点
+      if((pte_L2 & PTE_V) && ((pte_L2 & (PTE_R|PTE_W|PTE_X)) == 0)){//非叶节点
         pagetable_t child=(pagetable_t)PTE2PA(pte_L2);
         for(int j=0;j<512;j++){
           pte_t pte_L1=child[j];
-          if((pte_L1 & PTE_V) && (pte_L1 & (PTE_R|PTE_W|PTE_X) == 0)){//非叶节点
+          if((pte_L1 & PTE_V) && ((pte_L1 & (PTE_R|PTE_W|PTE_X)) == 0)){//非叶节点
             pagetable_t grandchild=(pagetable_t)PTE2PA(pte_L1);
             for(int k=0;k<512;k++){
               grandchild[k]=0;//直接清除L0的每一个页表项
