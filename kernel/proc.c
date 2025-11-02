@@ -235,6 +235,8 @@ void userinit(void) {
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  //任务三：第一个进程也需要将用户页表映射到内核页表中
+  sync_pagetable(p->k_pagetable,p->pagetable,0,p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -259,10 +261,15 @@ int growproc(int n) {
     if ((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    //任务三：将改变后的进程页表同步到内核页表中
+    sync_pagetable(p->k_pagetable,p->pagetable,p->sz,p->sz+n);
   } else if (n < 0) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    uvmdealloc_u_in_k(p->k_pagetable,p->sz,p->sz+n);
   }
   p->sz = sz;
+  
+
   return 0;
 }
 
@@ -300,6 +307,10 @@ int fork(void) {
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
+
+  //任务三：子进程完成了对父进程相关信息的继承后
+  //添加上子进程独立内核页表对用户页表的映射
+  sync_pagetable(np->k_pagetable,np->pagetable,0,np->sz);
 
   pid = np->pid;
 

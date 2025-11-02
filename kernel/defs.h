@@ -181,6 +181,12 @@ int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             test_pagetable();
 void            vmprint(pagetable_t);
 pagetable_t     proc_kpagetable(void);
+int             sync_pagetable(pagetable_t,pagetable_t,uint64,uint64);
+uint64          uvmdealloc_u_in_k(pagetable_t , uint64 , uint64 );
+
+// vmcopyin.c
+int             copyinstr_new(pagetable_t , char *, uint64 , uint64 );
+int             copyin_new(pagetable_t , char *, uint64 , uint64 );
 
 // plic.c
 void            plicinit(void);

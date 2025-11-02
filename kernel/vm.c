@@ -319,7 +319,7 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
-  uint64 n, va0, pa0;
+  /*uint64 n, va0, pa0;
 
   while (len > 0) {
     va0 = PGROUNDDOWN(srcva);
@@ -333,7 +333,8 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
     dst += n;
     srcva = va0 + PGSIZE;
   }
-  return 0;
+  return 0;*/
+  return copyin_new(pagetable,dst,srcva,len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -341,7 +342,7 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
 int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max) {
-  uint64 n, va0, pa0;
+  /*uint64 n, va0, pa0;
   int got_null = 0;
 
   while (got_null == 0 && max > 0) {
@@ -372,7 +373,8 @@ int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max) {
     return 0;
   } else {
     return -1;
-  }
+  }*/
+  return copyinstr_new(pagetable,dst,srcva,max);
 }
 
 // check if use global kpgtbl or not
@@ -464,4 +466,87 @@ pagetable_t proc_kpagetable(void) {
   }
 
   return kpagetable;
+}
+
+/*//将用户页表的整个映射复制到内核页表
+void sync_pagetable(pagetable_t kpagetable,pagetable_t upagetable,uint64 size){
+  pte_t* pte;
+  for(uint64 i=0;i<size;i+=PGSIZE){
+    pte=walk(upagetable,i,0);//遍历用户页表
+    if(pte==0||!(*pte&PTE_V)) continue;//页表不存在或无效
+    if(i>=TRAPFRAME||(walk(kpagetable,i,0)!=0&&(*pte&PTE_V))) continue;//内核页表该区域已被分配
+    uint64 pa=PTE2PA(*pte);
+    if(mappages(kpagetable,i,PGSIZE,pa,PTE_FLAGS(*pte)&~PTE_U)!=0){//建立内核页表的映射，将用户标志位置0
+      return;
+    }
+  }
+}*/
+
+int sync_pagetable(pagetable_t kpagetable, pagetable_t upagetable, uint64 sz, uint64 sz_n) {
+  pte_t* pte;
+  uint64 pa, i;
+  uint flags;
+  uint64 start_sz = PGROUNDUP(sz);
+  for (i = start_sz; i < sz_n; i += PGSIZE) {
+    // 跳过 TRAMPOLINE，因为它已经在内核页表中了（proc_kpagetable 中已映射）
+    if (i == TRAMPOLINE) continue;
+    
+    if ((pte = walk(upagetable, i, 0)) == 0) {
+      continue; // 跳过未映射的页面
+    }
+    if ((*pte & PTE_V) == 0) {
+      continue; // 跳过无效的页面
+    }
+    
+    // 检查内核页表中是否已经存在映射（除了 TRAMPOLINE）
+    pte_t *kpte = walk(kpagetable, i, 0);
+    if (kpte != 0 && (*kpte & PTE_V)) {
+      continue; // 已经映射，跳过以避免重复映射
+    }
+    
+    pa = PTE2PA(*pte);
+    // 允许内存访问
+    flags = PTE_FLAGS(*pte) & (~PTE_U); // 移除用户标志位
+    if (mappages(kpagetable, i, PGSIZE, (uint64)pa, flags) != 0) { // 创建页表项
+      // 移除映射：只移除从 start_sz 到 i 之间已经成功映射的页面
+      if (i > start_sz) {
+        for (uint64 j = start_sz; j < i; j += PGSIZE) {
+          if (j == TRAMPOLINE) continue;
+          kpte = walk(kpagetable, j, 0);
+          if (kpte != 0 && (*kpte & PTE_V)) {
+            *kpte = 0;
+          }
+        }
+      }
+      return -1;
+    }
+  }
+  // 单独处理 TRAPFRAME，确保它被同步到内核页表中（内核需要访问它）
+  if ((pte = walk(upagetable, TRAPFRAME, 0)) != 0 && (*pte & PTE_V)) {
+    pte_t *kpte = walk(kpagetable, TRAPFRAME, 0);
+    if (kpte == 0 || (*kpte & PTE_V) == 0) {
+      pa = PTE2PA(*pte);
+      flags = PTE_FLAGS(*pte) & (~PTE_U);
+      if (mappages(kpagetable, TRAPFRAME, PGSIZE, pa, flags) != 0) {
+        return -1;
+      }
+    }
+  }
+  return 0;
+}
+
+uint64 uvmdealloc_u_in_k(pagetable_t pagetable, uint64 oldsz, uint64 newsz) {
+  if (newsz >= oldsz) return newsz;
+  if (PGROUNDUP(newsz) < PGROUNDUP(oldsz)) {
+    uint64 start_va = PGROUNDUP(newsz);
+    uint64 end_va = PGROUNDUP(oldsz);
+    // 安全地取消映射，跳过未映射的页面
+    for (uint64 a = start_va; a < end_va; a += PGSIZE) {
+      pte_t *pte = walk(pagetable, a, 0);
+      if (pte != 0 && (*pte & PTE_V)) {
+        *pte = 0; // 只清除PTE，不释放物理内存
+      }
+    }
+  }
+  return newsz;
 }

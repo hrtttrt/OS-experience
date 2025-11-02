@@ -95,8 +95,13 @@ int exec(char *path, char **argv) {
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp;          // initial stack pointer
+
+  //任务三：更新进程独立内核页表的内容，建立新的映射
+  uvmdealloc_u_in_k(p->k_pagetable,p->sz,0);
+  sync_pagetable(p->k_pagetable,pagetable,0,sz);
+
   proc_freepagetable(oldpagetable, oldsz);
-  if(p->pid==1) vmprint(p->pagetable);//在第一个进程启动时打印页表信息
+  if(p->pid==1) vmprint(p->pagetable);//任务一：在第一个进程启动时打印页表信息
   return argc;  // this ends up in a0, the first argument to main(argc, argv)
 
 bad:
