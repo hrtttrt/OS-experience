@@ -392,7 +392,7 @@ void vmp(pagetable_t pgtbl,int level,uint64 va_base) {
   char flags[4];
   for(int i=0;i<512;i++){// 遍历当前页表页中的所有PTE表项
     pte_t pte = pgtbl[i]; //获取第i条PTE 
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){ //页表项有效&不具有R/W/X权限，说明不是叶子映射
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){ //页表项有效&不具有R/W/X权限，说明不是叶子节点
       flags[0]=(pte&PTE_R)?'r':'-';
       flags[1]=(pte&PTE_W)?'w':'-';
       flags[2]=(pte&PTE_X)?'x':'-';
@@ -404,7 +404,7 @@ void vmp(pagetable_t pgtbl,int level,uint64 va_base) {
       printf("idx: %d: pa: %p, flags: %s\n",i,pa,flags);
       vmp((pagetable_t)pa,level+1,next_va_base);
     }
-    else if(pte & PTE_V){// 如果PTE有效且具有R/W/X权限（叶子节点
+    else if(pte & PTE_V){// 如果PTE有效且具有R/W/X权限（叶子节点）
       flags[0]=(pte&PTE_R)?'r':'-';
       flags[1]=(pte&PTE_W)?'w':'-';
       flags[2]=(pte&PTE_X)?'x':'-';
@@ -468,47 +468,27 @@ pagetable_t proc_kpagetable(void) {
   return kpagetable;
 }
 
-/*//将用户页表的整个映射复制到内核页表
-void sync_pagetable(pagetable_t kpagetable,pagetable_t upagetable,uint64 size){
-  pte_t* pte;
-  for(uint64 i=0;i<size;i+=PGSIZE){
-    pte=walk(upagetable,i,0);//遍历用户页表
-    if(pte==0||!(*pte&PTE_V)) continue;//页表不存在或无效
-    if(i>=TRAPFRAME||(walk(kpagetable,i,0)!=0&&(*pte&PTE_V))) continue;//内核页表该区域已被分配
-    uint64 pa=PTE2PA(*pte);
-    if(mappages(kpagetable,i,PGSIZE,pa,PTE_FLAGS(*pte)&~PTE_U)!=0){//建立内核页表的映射，将用户标志位置0
-      return;
-    }
-  }
-}*/
-
 int sync_pagetable(pagetable_t kpagetable, pagetable_t upagetable, uint64 sz, uint64 sz_n) {
   pte_t* pte;
   uint64 pa, i;
   uint flags;
-  uint64 start_sz = PGROUNDUP(sz);
+  uint64 start_sz = PGROUNDUP(sz);//页对齐
   for (i = start_sz; i < sz_n; i += PGSIZE) {
-    // 跳过 TRAMPOLINE，因为它已经在内核页表中了（proc_kpagetable 中已映射）
-    if (i == TRAMPOLINE) continue;
     
-    if ((pte = walk(upagetable, i, 0)) == 0) {
-      continue; // 跳过未映射的页面
-    }
-    if ((*pte & PTE_V) == 0) {
-      continue; // 跳过无效的页面
-    }
+    if (i == TRAMPOLINE) continue;// 跳过 TRAMPOLINE，因为它已经在内核页表中了
+    if ((pte = walk(upagetable, i, 0)) == 0) continue; // 跳过未映射的页面
+    if ((*pte & PTE_V) == 0) continue; // 跳过无效的页面
     
-    // 检查内核页表中是否已经存在映射（除了 TRAMPOLINE）
+    // 检查内核页表中是否已经存在映射
     pte_t *kpte = walk(kpagetable, i, 0);
-    if (kpte != 0 && (*kpte & PTE_V)) {
-      continue; // 已经映射，跳过以避免重复映射
-    }
+    if (kpte != 0 && (*kpte & PTE_V)) continue; // 已经映射，跳过以避免重复映射
     
     pa = PTE2PA(*pte);
-    // 允许内存访问
     flags = PTE_FLAGS(*pte) & (~PTE_U); // 移除用户标志位
-    if (mappages(kpagetable, i, PGSIZE, (uint64)pa, flags) != 0) { // 创建页表项
-      // 移除映射：只移除从 start_sz 到 i 之间已经成功映射的页面
+    // 创建页表项
+    if (mappages(kpagetable, i, PGSIZE, (uint64)pa, flags) != 0) { 
+      //若创建失败，则移除映射
+      //此时需要移除从start_sz到i之间已经成功映射的页面
       if (i > start_sz) {
         for (uint64 j = start_sz; j < i; j += PGSIZE) {
           if (j == TRAMPOLINE) continue;
@@ -521,21 +501,19 @@ int sync_pagetable(pagetable_t kpagetable, pagetable_t upagetable, uint64 sz, ui
       return -1;
     }
   }
-  // 单独处理 TRAPFRAME，确保它被同步到内核页表中（内核需要访问它）
+  // 单独处理 TRAPFRAME，确保它被同步到内核页表中
   if ((pte = walk(upagetable, TRAPFRAME, 0)) != 0 && (*pte & PTE_V)) {
     pte_t *kpte = walk(kpagetable, TRAPFRAME, 0);
     if (kpte == 0 || (*kpte & PTE_V) == 0) {
       pa = PTE2PA(*pte);
       flags = PTE_FLAGS(*pte) & (~PTE_U);
-      if (mappages(kpagetable, TRAPFRAME, PGSIZE, pa, flags) != 0) {
-        return -1;
-      }
+      if (mappages(kpagetable, TRAPFRAME, PGSIZE, pa, flags) != 0) return -1;
     }
   }
   return 0;
 }
 
-uint64 uvmdealloc_u_in_k(pagetable_t pagetable, uint64 oldsz, uint64 newsz) {
+uint64 uvmunmap_user_in_kernel(pagetable_t pagetable, uint64 oldsz, uint64 newsz) {
   if (newsz >= oldsz) return newsz;
   if (PGROUNDUP(newsz) < PGROUNDUP(oldsz)) {
     uint64 start_va = PGROUNDUP(newsz);

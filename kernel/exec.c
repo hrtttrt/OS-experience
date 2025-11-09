@@ -97,7 +97,7 @@ int exec(char *path, char **argv) {
   p->trapframe->sp = sp;          // initial stack pointer
 
   //任务三：更新进程独立内核页表的内容，建立新的映射
-  uvmdealloc_u_in_k(p->k_pagetable,p->sz,0);
+  uvmunmap_user_in_kernel(p->k_pagetable,p->sz,0);
   sync_pagetable(p->k_pagetable,pagetable,0,sz);
 
   proc_freepagetable(oldpagetable, oldsz);

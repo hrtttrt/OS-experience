@@ -265,7 +265,7 @@ int growproc(int n) {
     sync_pagetable(p->k_pagetable,p->pagetable,p->sz,p->sz+n);
   } else if (n < 0) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
-    uvmdealloc_u_in_k(p->k_pagetable,p->sz,p->sz+n);
+    uvmunmap_user_in_kernel(p->k_pagetable,p->sz,p->sz+n);
   }
   p->sz = sz;
   
